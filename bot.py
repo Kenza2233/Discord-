@@ -109,6 +109,18 @@ async def setup_set(interaction: discord.Interaction, notification_channel: disc
 
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
+@setup_group.command(name="remove", description="Hentikan pemantauan map otomatis untuk server ini.")
+async def setup_remove(interaction: discord.Interaction):
+    """Menghapus konfigurasi pemantauan map otomatis."""
+    guild_id = str(interaction.guild.id)
+
+    if guild_id in config and "roblox_place_id_to_monitor" in config[guild_id]:
+        removed_id = config[guild_id].pop("roblox_place_id_to_monitor")
+        await save_config()
+        await interaction.response.send_message(f"✅ Berhasil menghapus pemantauan otomatis untuk Place ID: {removed_id}.", ephemeral=True)
+    else:
+        await interaction.response.send_message("ℹ️ Tidak ada map yang sedang dipantau secara otomatis untuk server ini.", ephemeral=True)
+
 bot.tree.add_command(setup_group)
 
 
@@ -276,10 +288,33 @@ async def check_roblox_map_status():
 
         last_known_status = monitored_map_states[place_id]
 
-        # Periksa jika ada perubahan dari Private ke Publik
-        if currently_public and not last_known_status:
-            game_name = game_data.get('name', 'N/A')
-            print(f"PERUBAHAN STATUS: Map '{game_name}' (ID: {place_id}) sekarang PUBLIK!")
+        # Periksa jika ada perubahan status
+        if currently_public != last_known_status:
+            # Notifikasi untuk perubahan ke PUBLIK
+            if currently_public and not last_known_status:
+                game_name = game_data.get('name', 'N/A')
+                print(f"PERUBAHAN STATUS: Map '{game_name}' (ID: {place_id}) sekarang PUBLIK!")
+
+                embed = discord.Embed(
+                    title="🎉 Map Roblox Sekarang Publik! 🎉",
+                    description=f"Map **{game_name}** yang Anda pantau sekarang sudah bisa diakses oleh semua orang!",
+                    color=discord.Color.blue()
+                )
+                game_url = f"https://www.roblox.com/games/{place_id}"
+                embed.add_field(name="🔗 Link Game", value=f"[Klik di sini untuk bermain]({game_url})", inline=False)
+                embed.add_field(name="Pemain Aktif", value=game_data.get("playing", 0), inline=True)
+                embed.add_field(name="Total Kunjungan", value=game_data.get("visits", 0), inline=True)
+
+            # Notifikasi untuk perubahan ke PRIVATE
+            elif not currently_public and last_known_status:
+                # Perlu mengambil nama game dari suatu tempat jika game_data adalah None
+                # Untuk saat ini, kita hanya akan menggunakan Place ID
+                print(f"PERUBAHAN STATUS: Map dengan ID {place_id} sekarang PRIVATE!")
+                embed = discord.Embed(
+                    title="🔒 Map Roblox Sekarang Private 🔒",
+                    description=f"Map dengan Place ID **{place_id}** yang Anda pantau sekarang telah dijadikan private.",
+                    color=discord.Color.dark_grey()
+                )
 
             # Kirim notifikasi ke semua server yang memantau place_id ini
             for guild_id, guild_config in config.items():
@@ -288,23 +323,12 @@ async def check_roblox_map_status():
                     channel = bot.get_channel(channel_id) if channel_id else None
 
                     if channel:
-                        embed = discord.Embed(
-                            title="🎉 Map Roblox Sekarang Publik! 🎉",
-                            description=f"Map **{game_name}** yang Anda pantau sekarang sudah bisa diakses oleh semua orang!",
-                            color=discord.Color.blue()
-                        )
-                        game_url = f"https://www.roblox.com/games/{place_id}"
-                        embed.add_field(name="🔗 Link Game", value=f"[Klik di sini untuk bermain]({game_url})", inline=False)
-                        embed.add_field(name="Pemain Aktif", value=game_data.get("playing", 0), inline=True)
-                        embed.add_field(name="Total Kunjungan", value=game_data.get("visits", 0), inline=True)
-
                         ping_role_id = guild_config.get("ping_role_id")
                         content = ""
                         if ping_role_id:
                             role = channel.guild.get_role(ping_role_id)
                             if role:
                                 content = role.mention
-
                         await channel.send(content=content, embed=embed)
                     else:
                         print(f"Error: Channel notifikasi untuk server ID {guild_id} tidak ditemukan atau tidak diatur.")
